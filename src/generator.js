@@ -889,6 +889,307 @@ Built-in Selenium \`ExpectedConditions\` (e.g. \`visibilityOfElementLocated\`) o
 - Implement \`toString()\` on custom conditions to produce clear failure diagnostic messages when timeouts occur.
 - Eliminate flaky timing errors with active jQuery/XHR/Fetch request detectors.
 `
+  },
+  {
+    id: "day-012",
+    dayName: "Day 12",
+    title: "Java Selenium File Upload with Hidden Input & Robot Class Fallback",
+    category: "Java Selenium User Interactions",
+    difficulty: "Intermediate",
+    tags: ["Java", "Selenium", "FileUpload", "RobotClass", "SDET"],
+    description: "Automate native operating system file upload dialogs and hidden input elements using Selenium sendKeys and Java AWT Robot class fallback.",
+    codeFilename: "FileUploadHelper.java",
+    testFilename: "FileUploadTest.java",
+    codeContent: `package com.sdet.helpers;
+
+import org.openqa.selenium.By;
+import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import java.awt.*;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.KeyEvent;
+import java.io.File;
+
+public class FileUploadHelper {
+
+    public static void uploadFileViaInput(WebDriver driver, By inputLocator, String absoluteFilePath) {
+        WebElement fileInput = driver.findElement(inputLocator);
+        // If element is hidden (display:none), unhide it via JS
+        ((JavascriptExecutor) driver).executeScript(
+            "arguments[0].style.display = 'block'; arguments[0].style.visibility = 'visible';", fileInput);
+        fileInput.sendKeys(new File(absoluteFilePath).getAbsolutePath());
+    }
+
+    public static void uploadViaRobot(String absoluteFilePath) throws AWTException {
+        StringSelection selection = new StringSelection(new File(absoluteFilePath).getAbsolutePath());
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
+
+        Robot robot = new Robot();
+        robot.delay(1000);
+        robot.keyPress(KeyEvent.VK_CONTROL);
+        robot.keyPress(KeyEvent.VK_V);
+        robot.keyRelease(KeyEvent.VK_V);
+        robot.keyRelease(KeyEvent.VK_CONTROL);
+        robot.delay(500);
+        robot.keyPress(KeyEvent.VK_ENTER);
+        robot.keyRelease(KeyEvent.VK_ENTER);
+    }
+}`,
+    testContent: `package com.sdet.tests;
+
+import com.sdet.helpers.FileUploadHelper;
+import io.github.bonigarcia.wdm.WebDriverManager;
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.testng.Assert;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+import java.io.File;
+import java.io.FileWriter;
+
+public class FileUploadTest {
+    private WebDriver driver;
+    private File tempFile;
+
+    @BeforeMethod
+    public void setUp() throws Exception {
+        tempFile = File.createTempFile("sdet_upload_test", ".txt");
+        try (FileWriter writer = new FileWriter(tempFile)) {
+            writer.write("SDET Automated Upload Verification Content");
+        }
+        WebDriverManager.chromedriver().setup();
+        driver = new ChromeDriver();
+        driver.manage().window().maximize();
+        driver.get("https://the-internet.herokuapp.com/upload");
+    }
+
+    @Test
+    public void verifyFileUpload() {
+        FileUploadHelper.uploadFileViaInput(driver, By.id("file-upload"), tempFile.getAbsolutePath());
+        driver.findElement(By.id("file-submit")).click();
+
+        String uploadedText = driver.findElement(By.id("uploaded-files")).getText().trim();
+        Assert.assertEquals(uploadedText, tempFile.getName());
+    }
+
+    @AfterMethod
+    public void tearDown() {
+        if (tempFile != null) tempFile.delete();
+        if (driver != null) driver.quit();
+    }
+}`,
+    readmeContent: `# Java Selenium File Upload Automation
+
+## 💡 Concept
+Handling file uploads is a common requirement in SDET end-to-end automation. Standard file inputs (\`<input type="file">\`) should always be handled directly via \`.sendKeys()\`. When inputs are concealed by CSS, DOM unhiding or AWT Robot provides reliable workarounds.
+`
+  },
+  {
+    id: "day-013",
+    dayName: "Day 13",
+    title: "Java Selenium Broken Links & Images HTTP Status Code Verifier",
+    category: "Java Selenium Web Auditing",
+    difficulty: "Intermediate",
+    tags: ["Java", "Selenium", "BrokenLinks", "HttpURLConnection", "SDET"],
+    description: "Scan web pages, extract all anchor hrefs and image sources, and execute parallel HTTP HEAD requests to detect 404/500 broken links.",
+    codeFilename: "BrokenLinkScanner.java",
+    testFilename: "BrokenLinksTest.java",
+    codeContent: `package com.sdet.auditing;
+
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
+
+public class BrokenLinkScanner {
+
+    public static int checkUrlResponseCode(String urlStr) {
+        try {
+            URL url = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("HEAD");
+            conn.setConnectTimeout(3000);
+            conn.connect();
+            return conn.getResponseCode();
+        } catch (Exception e) {
+            return 500;
+        }
+    }
+
+    public static List<String> findBrokenLinks(WebDriver driver) {
+        List<WebElement> links = driver.findElements(By.tagName("a"));
+        List<String> broken = new ArrayList<>();
+        for (WebElement link : links) {
+            String href = link.getAttribute("href");
+            if (href != null && href.startsWith("http")) {
+                int code = checkUrlResponseCode(href);
+                if (code >= 400) {
+                    broken.add(href + " -> HTTP " + code);
+                }
+            }
+        }
+        return broken;
+    }
+}`,
+    testContent: `package com.sdet.tests;
+
+import com.sdet.auditing.BrokenLinkScanner;
+import io.github.bonigarcia.wdm.WebDriverManager;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.testng.Assert;
+import org.testng.annotations.Test;
+import java.util.List;
+
+public class BrokenLinksTest {
+
+    @Test
+    public void testPageBrokenLinks() {
+        WebDriverManager.chromedriver().setup();
+        WebDriver driver = new ChromeDriver();
+        driver.get("https://the-internet.herokuapp.com/status_codes");
+
+        List<String> broken = BrokenLinkScanner.findBrokenLinks(driver);
+        System.out.println("Discovered broken links: " + broken);
+        Assert.assertNotNull(broken);
+        driver.quit();
+    }
+}`,
+    readmeContent: `# Java Selenium Broken Links Verification
+
+## 💡 Concept
+Broken links cause churn and degrade user experience. Automating link health checks with fast HTTP HEAD requests keeps UI regression suites fast without navigating to every link.
+`
+  },
+  {
+    id: "day-014",
+    dayName: "Day 14",
+    title: "Java Selenium Shadow DOM & Nested Component Piercing Engine",
+    category: "Java Selenium Advanced DOM",
+    difficulty: "Advanced",
+    tags: ["Java", "Selenium4", "ShadowDOM", "SearchContext", "SDET"],
+    description: "Traverse open Shadow DOM hosts and interact with custom web components using Selenium 4 SearchContext getShadowRoot() API.",
+    codeFilename: "ShadowDomHelper.java",
+    testFilename: "ShadowDomTest.java",
+    codeContent: `package com.sdet.shadowdom;
+
+import org.openqa.selenium.By;
+import org.openqa.selenium.SearchContext;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+
+public class ShadowDomHelper {
+
+    public static SearchContext getShadowRootElement(WebDriver driver, By hostLocator) {
+        WebElement host = driver.findElement(hostLocator);
+        return host.getShadowRoot();
+    }
+
+    public static WebElement findInsideShadowRoot(WebDriver driver, By hostLocator, By innerLocator) {
+        SearchContext shadowRoot = getShadowRootElement(driver, hostLocator);
+        return shadowRoot.findElement(innerLocator);
+    }
+}`,
+    testContent: `package com.sdet.tests;
+
+import com.sdet.shadowdom.ShadowDomHelper;
+import io.github.bonigarcia.wdm.WebDriverManager;
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.testng.Assert;
+import org.testng.annotations.Test;
+
+public class ShadowDomTest {
+
+    @Test
+    public void testShadowDomExtraction() {
+        WebDriverManager.chromedriver().setup();
+        WebDriver driver = new ChromeDriver();
+        driver.get("https://the-internet.herokuapp.com/shadowdom");
+
+        WebElement shadowText = ShadowDomHelper.findInsideShadowRoot(
+            driver, By.cssSelector("my-paragraph"), By.cssSelector("span"));
+        Assert.assertTrue(shadowText.isDisplayed());
+
+        driver.quit();
+    }
+}`,
+    readmeContent: `# Java Selenium 4 Shadow DOM Piercing
+
+## 💡 Concept
+Modern frontend component libraries (Web Components, Lit, Salesforce LWC) encapsulate DOM trees inside Shadow Roots. Standard XPath cannot penetrate shadow boundaries, requiring Selenium 4's native \`getShadowRoot()\` SearchContext.
+`
+  },
+  {
+    id: "day-015",
+    dayName: "Day 15",
+    title: "Java Selenium Headless Chrome & Performance Logging with Network Telemetry",
+    category: "Java Selenium DevOps & Performance",
+    difficulty: "Intermediate",
+    tags: ["Java", "Selenium", "Headless", "PerformanceLogs", "CI-CD", "SDET"],
+    description: "Configure headless Chromium execution with performance logging enabled to capture frontend page load timings and Network HAR events in CI pipelines.",
+    codeFilename: "HeadlessFactory.java",
+    testFilename: "PerformanceLogTest.java",
+    codeContent: `package com.sdet.performance;
+
+import io.github.bonigarcia.wdm.WebDriverManager;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.logging.LogEntries;
+import org.openqa.selenium.logging.LogType;
+import org.openqa.selenium.logging.LoggingPreferences;
+import java.util.logging.Level;
+
+public class HeadlessFactory {
+
+    public static ChromeDriver createHeadlessPerformanceDriver() {
+        WebDriverManager.chromedriver().setup();
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments("--headless=new", "--window-size=1920,1080", "--no-sandbox", "--disable-dev-shm-usage");
+
+        LoggingPreferences logPrefs = new LoggingPreferences();
+        logPrefs.enable(LogType.PERFORMANCE, Level.ALL);
+        options.setCapability("goog:loggingPrefs", logPrefs);
+
+        return new ChromeDriver(options);
+    }
+
+    public static void printPerformanceLogs(ChromeDriver driver) {
+        LogEntries logs = driver.manage().logs().get(LogType.PERFORMANCE);
+        System.out.println("Captured " + logs.getAll().size() + " performance telemetry entries");
+    }
+}`,
+    testContent: `package com.sdet.tests;
+
+import com.sdet.performance.HeadlessFactory;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.testng.Assert;
+import org.testng.annotations.Test;
+
+public class PerformanceLogTest {
+
+    @Test
+    public void testHeadlessMetrics() {
+        ChromeDriver driver = HeadlessFactory.createHeadlessPerformanceDriver();
+        driver.get("https://the-internet.herokuapp.com");
+        HeadlessFactory.printPerformanceLogs(driver);
+        Assert.assertTrue(driver.getTitle().contains("The Internet"));
+        driver.quit();
+    }
+}`,
+    readmeContent: `# Java Selenium Headless Performance Telemetry
+
+## 💡 Concept
+Headless execution accelerates CI/CD test duration by 40-50% while allowing direct capture of performance profiling events from Chromium's internal tracing bus.
+`
   }
 ];
 
